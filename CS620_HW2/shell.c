@@ -98,6 +98,8 @@ void executeCommand(ExecBlock* block)
     } else { // parent process wait for completion
         while (wait(&status) != pid) ;
     }
+    
+    printf("\r"); // start new line in terminal
 }
 
 
@@ -110,6 +112,7 @@ void freeExecBlock(ExecBlock* block)
     while (cur != NULL) {
         next = cur->pipe;
         
+        free(cur->argv);
         free(cur);
         
         cur = next;
@@ -120,6 +123,7 @@ void freeExecBlock(ExecBlock* block)
 int main(int arvc, char **argv)
 {
     while (1) {
+        printf("MiniShell $ ");
         char* input = (char*) calloc(MAX_LEN, sizeof(char));
         
         input = fgets(input, MAX_LEN, stdin);
@@ -129,7 +133,7 @@ int main(int arvc, char **argv)
             free(input);
             
             return 0;
-        } else {
+        } else if (strcmp(input, "\n") != 0) {
             ExecBlock* execList = parse(input);
             
             executeCommand(execList);
