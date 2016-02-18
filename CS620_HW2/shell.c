@@ -83,19 +83,20 @@ void executeCommand(ExecBlock* block)
         return;
     }
     
-    pid_t pid;
+    pid_t pid = 0;
+    int status = 0;
     
-    switch (pid = fork()) {
-        case -1:
-            perror("fork");
-            break;
-        case 0:
-            execvp(block->argv[0], block->argv + 1);
-            perror(block->argv[0]);
+    if ((pid = fork()) < 0) {
+        perror("fork");
+        freeExecBlock(block);
+        exit(-1);
+    } else if (pid == 0) { // for child process, run command
+        if (execvp(block->argv[0], block->argv) < 0) {
+            perror("execvp");
             exit(-1);
-        default:
-            waitpid(pid, NULL, 0);
-            break;
+        }
+    } else { // parent process wait for completion
+        while (wait(&status) != pid) ;
     }
 }
 
@@ -124,7 +125,7 @@ int main(int arvc, char **argv)
         input = fgets(input, MAX_LEN, stdin);
         
         // case if user inputs exit.
-        if (strcmp(input, "exit") == 0) {
+        if (strcmp(input, "exit\n") == 0) {
             free(input);
             
             return 0;
