@@ -91,6 +91,15 @@ void executeCommand(ExecBlock* block)
         freeExecBlock(block);
         exit(-1);
     } else if (pid == 0) { // for child process, run command
+        // redirect input file if necessary
+        if (block->fileIn) {
+            redirectIn(block->fileIn);
+        }
+        
+        if (block->fileOut) {
+            redirectOut(block->fileOut);
+        }
+        
         if (execvp(block->argv[0], block->argv) < 0) {
             perror("execvp");
             exit(-1);
@@ -102,6 +111,25 @@ void executeCommand(ExecBlock* block)
     printf("\r"); // start new line in terminal
 }
 
+// redirect input from a file
+int redirectIn(char * fileIn) {
+    FILE* filePtr = fopen(fileIn, "r");
+    
+    dup2(fileno(filePtr), STDIN_FILENO);
+    fclose(filePtr);
+    
+    return 1;
+}
+
+// redirect output to another file
+int redirectOut(char * fileOut) {
+    FILE* filePtr = fopen(fileOut, "w+");
+    
+    dup2(fileno(filePtr), STDOUT_FILENO);
+    fclose(filePtr);
+    
+    return 1;
+}
 
 //This function should deallocate an ExecBlock including the ExecBlock(s) it might pipe to. 
 void freeExecBlock(ExecBlock* block)

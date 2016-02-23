@@ -26,4 +26,7 @@ ExecBlock* parse(char*);
 void executeCommand(ExecBlock*);
 void freeExecBlock(ExecBlock*);
 
+int redirectIn(char * fileIn); // redirects input from a file
+int redirectOut(char * fileOut); // redirects output to a file
+
 #endif
