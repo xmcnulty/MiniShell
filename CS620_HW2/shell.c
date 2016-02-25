@@ -85,70 +85,72 @@ void executeCommand(ExecBlock* block)
     
     pid_t pid = 0;
     int status = 0;
+    int command_count = 0; // number of commands executed
+    ExecBlock * _n = block; // current execblock to execute
     
-    if ((pid = fork()) < 0) {
-        perror("fork");
-        freeExecBlock(block);
-        exit(-1);
-    } else if (pid == 0) { // for child process, run command
-        // count the number of pipes that need to be created
-        int num_pipes = 0;
-        
-        for (ExecBlock * n = block; n; n = n->pipe) num_pipes ++;
-        
-        // array of pipe file descriptors
-        int pipefds[2 * num_pipes];
-        
-        // create all the pipes necessary for execution
-        for (int i=0; i < num_pipes; i++) {
-            if (pipe(pipefds + 2*i) < 0) {
-                perror("pipe");
-                exit(-1);
-            }
+    // count the number of pipes that need to be created
+    int num_pipes = 0;
+    
+    for (ExecBlock * n = block; n; n = n->pipe) num_pipes ++;
+    
+    // array of pipe file descriptors
+    int pipefds[2 * num_pipes];
+    
+    // create all the pipes necessary for execution
+    for (int i=0; i < num_pipes; i++) {
+        if (pipe(pipefds + 2*i) < 0) {
+            perror("pipe");
+            exit(-1);
         }
+    }
+    
+    while (_n) { // execute while there are still commands
+        // fork a new process to run the command
+        pid = fork();
         
-        int command_count = 0; // count the number of ExecBlocks that have been executed
-        ExecBlock * _block = block; // keep track of which block is being executed
-        
-        while (_block) {
-            pid_t pid = fork();
-            
-            if (pid == 0) {
-                // if this is not the last command, pipe this output
-                if (_block->pipe) {
-                    if (dup2(pipefds[command_count+1], 1) < 0) {
-                        perror("dup2");
-                        exit(-1);
-                    }
-                }
-                
-                // if this isn't the first command, ei there are multiple pipe calls
-                if (command_count != 0) {
-                    if (dup2(pipefds[command_count-2], 0) < 0) {
-                        perror("dup2");
-                        exit(-1);
-                    }
-                }
-                
-                // clase all the pipe files
-                for (int i=0; i < 2 * num_pipes; i++) {
-                    close(pipefds[i]);
-                }
-                
-                if (execvp(_block->argv[0], _block->argv)) {
-                    perror(_block->argv[0]);
+        if (pid == 0) {
+            // if there is a command to pipe to
+            if (_n->pipe) {
+                if (dup2(pipefds[command_count + 1], 1) < 0) {
+                    perror("dup2");
                     exit(-1);
                 }
-            } else if (pid < 0) {
-                perror("fork");
-                exit(-1);
             }
             
-            _block = _block->pipe; // move on the next execution block
-            command_count += 2;
+            // if this isn't the first command in the block change
+            if (command_count != 0) {
+                if (dup2(pipefds[command_count - 2], 0) < 0) {
+                    perror("dup2");
+                    exit(-1);
+                }
+            }
+            
+            // close all the children of this
+            for (int i=0; i < 2 * num_pipes; i++) {
+                close(pipefds[i]);
+            }
+            
+            // execute the command
+            if (execvp(_n->argv[0], _n->argv) < 0) {
+                perror("execvp");
+                exit(-1);
+            }
+        } else if (pid < 0) {
+            perror("fork");
+            exit(-1);
         }
-    } else { // parent process wait for completion
-        while (wait(&status) != pid) ;
+        
+        _n = _n->pipe; // progress to the next command block
+        command_count += 2; // increment by 2, two fd for each pipe command
+    }
+    
+    // wait for children after closing pipes
+    for (int i=0; i < 2*num_pipes; i++) {
+        close(pipefds[i]);
+    }
+    
+    for (int i=0; i < num_pipes; i++) {
+        wait(&status);
     }
     
     printf("\r"); // start new line in terminal
