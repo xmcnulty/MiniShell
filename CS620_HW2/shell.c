@@ -91,24 +91,66 @@ void executeCommand(ExecBlock* block)
         freeExecBlock(block);
         exit(-1);
     } else if (pid == 0) { // for child process, run command
-        // redirect input file if necessary
-        if (block->fileIn) {
-            if (redirectIn(block->fileIn) == -1) {
-                perror("Redirect input.\n");
-                exit(-1);
+        // pipe the output of this process to another process
+        for(ExecBlock * n = block; n; n = n->pipe) {
+            int pipefds[2];
+            
+            if (n->pipe) {
+                // call the pipe command
+                if (pipe(pipefds) < 0) {
+                    perror("pipe");
+                    exit(-1);
+                }
             }
-        }
-        
-        if (block->fileOut) {
-            if (redirectOut(block->fileOut) == -1) {
-                perror("Redirect output.\n");
+            
+            pid_t pid = 0;
+            
+            if ((pid = fork()) < 0) {
+                perror("fork");
+                
                 exit(-1);
+            } else if (pid == 0) {
+                
+                // redirect input file if necessary
+                if (block->fileIn) {
+                    if (redirectIn(block->fileIn) == -1) {
+                        perror("Redirect input.\n");
+                        exit(-1);
+                    }
+                }
+                
+                if (block->fileOut) {
+                    if (redirectOut(block->fileOut) == -1) {
+                        perror("Redirect output.\n");
+                        exit(-1);
+                    }
+                }
+                
+                // if being piped
+                if (n->pipe) {
+                    if (pipefds[1] != 1) {
+                        dup2(pipefds[1], 1);
+                        
+                        close(pipefds[1]);
+                    }
+                    
+                    close(pipefds[0]);
+                }
+                
+                if (execvp(block->argv[0], block->argv) < 0) {
+                    perror("execvp");
+                    exit(-1);
+                }
+                
+            } else {
+                if (pipefds[0] != 0) {
+                    dup2(pipefds[0], 0);
+                    
+                    close(pipefds[0]);
+                }
+                
+                close(pipefds[1]);
             }
-        }
-        
-        if (execvp(block->argv[0], block->argv) < 0) {
-            perror("execvp");
-            exit(-1);
         }
     } else { // parent process wait for completion
         while (wait(&status) != pid) ;
