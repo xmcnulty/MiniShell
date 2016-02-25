@@ -91,66 +91,61 @@ void executeCommand(ExecBlock* block)
         freeExecBlock(block);
         exit(-1);
     } else if (pid == 0) { // for child process, run command
-        // pipe the output of this process to another process
-        for(ExecBlock * n = block; n; n = n->pipe) {
-            int pipefds[2];
-            
-            if (n->pipe) {
-                // call the pipe command
-                if (pipe(pipefds) < 0) {
-                    perror("pipe");
-                    exit(-1);
-                }
-            }
-            
-            pid_t pid = 0;
-            
-            if ((pid = fork()) < 0) {
-                perror("fork");
-                
+        // count the number of pipes that need to be created
+        int num_pipes = 0;
+        
+        for (ExecBlock * n = block; n; n = n->pipe) num_pipes ++;
+        
+        // array of pipe file descriptors
+        int pipefds[2 * num_pipes];
+        
+        // create all the pipes necessary for execution
+        for (int i=0; i < num_pipes; i++) {
+            if (pipe(pipefds + 2*i) < 0) {
+                perror("pipe");
                 exit(-1);
-            } else if (pid == 0) {
-                
-                // redirect input file if necessary
-                if (block->fileIn) {
-                    if (redirectIn(block->fileIn) == -1) {
-                        perror("Redirect input.\n");
+            }
+        }
+        
+        int command_count = 0; // count the number of ExecBlocks that have been executed
+        ExecBlock * _block = block; // keep track of which block is being executed
+        
+        while (_block) {
+            pid_t pid = fork();
+            
+            if (pid == 0) {
+                // if this is not the last command, pipe this output
+                if (_block->pipe) {
+                    if (dup2(pipefds[command_count+1], 1) < 0) {
+                        perror("dup2");
                         exit(-1);
                     }
                 }
                 
-                if (block->fileOut) {
-                    if (redirectOut(block->fileOut) == -1) {
-                        perror("Redirect output.\n");
+                // if this isn't the first command, ei there are multiple pipe calls
+                if (command_count != 0) {
+                    if (dup2(pipefds[command_count-2], 0) < 0) {
+                        perror("dup2");
                         exit(-1);
                     }
                 }
                 
-                // if being piped
-                if (n->pipe) {
-                    if (pipefds[1] != 1) {
-                        dup2(pipefds[1], 1);
-                        
-                        close(pipefds[1]);
-                    }
-                    
-                    close(pipefds[0]);
+                // clase all the pipe files
+                for (int i=0; i < 2 * num_pipes; i++) {
+                    close(pipefds[i]);
                 }
                 
-                if (execvp(block->argv[0], block->argv) < 0) {
-                    perror("execvp");
+                if (execvp(_block->argv[0], _block->argv)) {
+                    perror(_block->argv[0]);
                     exit(-1);
                 }
-                
-            } else {
-                if (pipefds[0] != 0) {
-                    dup2(pipefds[0], 0);
-                    
-                    close(pipefds[0]);
-                }
-                
-                close(pipefds[1]);
+            } else if (pid < 0) {
+                perror("fork");
+                exit(-1);
             }
+            
+            _block = _block->pipe; // move on the next execution block
+            command_count += 2;
         }
     } else { // parent process wait for completion
         while (wait(&status) != pid) ;
