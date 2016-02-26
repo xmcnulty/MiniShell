@@ -115,6 +115,18 @@ void executeCommand(ExecBlock* block)
                     perror("dup2");
                     exit(-1);
                 }
+            } else if (_n->fileOut) { // redirect output if needed
+                if (redirectOut(_n->fileOut) < 0) {
+                    perror("redirect out");
+                    exit(-1);
+                }
+            }
+            
+            if (_n->fileIn) { // redirect input from file if needed
+                if (redirectIn(_n->fileIn) < 0) {
+                    perror("redirect in");
+                    exit(-1);
+                }
             }
             
             // if this isn't the first command in the block change
